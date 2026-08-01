@@ -5,36 +5,45 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 import cv_filters
-import ai_styles
 import db
 
 logger = logging.getLogger(__name__)
 
-# Daily per-user cap on AI (Gemini) requests — protects your shared free-tier quota.
-# OpenCV styles (cartoon/sketch/oil) are NOT counted against this since they're free.
-DAILY_AI_LIMIT_PER_USER = 15
-
-CV_STYLES = {
-    "cartoon": "🖍️ Cartoon",
-    "sketch": "✏️ Pencil Sketch",
-    "sketch_color": "🎨 Color Sketch",
+# All styles are instant, local OpenCV/PIL processing — no API calls, no
+# rate limits, no cost. Nothing here ever calls out to the network.
+STYLES = {
+    "cartoon":       ("🖍️ Cartoon",        lambda b: cv_filters.cartoonify(b)),
+    "sketch":        ("✏️ Pencil Sketch",   lambda b: cv_filters.pencil_sketch(b, color=False)),
+    "sketch_color":  ("🎨 Color Sketch",    lambda b: cv_filters.pencil_sketch(b, color=True)),
+    "oil":           ("🖼️ Oil Painting",    lambda b: cv_filters.oil_painting(b)),
+    "sepia":         ("📜 Sepia",           lambda b: cv_filters.sepia(b)),
+    "bw":            ("⚫ Black & White",    lambda b: cv_filters.black_and_white(b)),
+    "negative":      ("🌗 Negative",         lambda b: cv_filters.negative(b)),
+    "emboss":        ("🪙 Emboss",           lambda b: cv_filters.emboss(b)),
+    "hdr":           ("✨ HDR Glow",         lambda b: cv_filters.hdr_glow(b)),
+    "vintage":       ("🎞️ Warm Vintage",    lambda b: cv_filters.warm_vintage(b)),
 }
 
 STYLE_MENU = [
     [
-        InlineKeyboardButton("🎨 Ghibli-inspired", callback_data="ai:ghibli"),
-        InlineKeyboardButton("✨ Anime", callback_data="ai:anime"),
+        InlineKeyboardButton(STYLES["cartoon"][0], callback_data="cv:cartoon"),
+        InlineKeyboardButton(STYLES["sketch"][0], callback_data="cv:sketch"),
     ],
     [
-        InlineKeyboardButton("🖌️ Watercolor", callback_data="ai:watercolor"),
-        InlineKeyboardButton("💥 Comic Book", callback_data="ai:comic"),
+        InlineKeyboardButton(STYLES["sketch_color"][0], callback_data="cv:sketch_color"),
+        InlineKeyboardButton(STYLES["oil"][0], callback_data="cv:oil"),
     ],
     [
-        InlineKeyboardButton("🖍️ Cartoon (instant)", callback_data="cv:cartoon"),
-        InlineKeyboardButton("✏️ Sketch (instant)", callback_data="cv:sketch"),
+        InlineKeyboardButton(STYLES["sepia"][0], callback_data="cv:sepia"),
+        InlineKeyboardButton(STYLES["bw"][0], callback_data="cv:bw"),
     ],
     [
-        InlineKeyboardButton("🎨 Color Sketch (instant)", callback_data="cv:sketch_color"),
+        InlineKeyboardButton(STYLES["negative"][0], callback_data="cv:negative"),
+        InlineKeyboardButton(STYLES["emboss"][0], callback_data="cv:emboss"),
+    ],
+    [
+        InlineKeyboardButton(STYLES["hdr"][0], callback_data="cv:hdr"),
+        InlineKeyboardButton(STYLES["vintage"][0], callback_data="cv:vintage"),
     ],
 ]
 
@@ -42,8 +51,8 @@ STYLE_MENU = [
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Send me a photo and I'll turn it into different art styles!\n\n"
-        "AI styles (Ghibli-inspired, Anime, Watercolor, Comic) use a limited daily quota. "
-        "Instant styles (Cartoon, Sketch) are unlimited and processed locally."
+        "All styles are processed instantly, right here — no AI, no waiting, "
+        "no daily limits."
     )
 
 
@@ -72,67 +81,31 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return
 
-    kind, style = query.data.split(":", 1)
+    _, style = query.data.split(":", 1)
+
+    if style not in STYLES:
+        await query.edit_message_text("Unknown style — please send the photo again.")
+        return
+
+    label, filter_fn = STYLES[style]
 
     tg_file = await context.bot.get_file(file_id)
     image_buf = io.BytesIO()
     await tg_file.download_to_memory(image_buf)
     image_bytes = image_buf.getvalue()
 
-    if kind == "cv":
-        await query.edit_message_text(f"Processing {CV_STYLES[style]}... ⚡")
-        try:
-            if style == "cartoon":
-                result = cv_filters.cartoonify(image_bytes)
-            elif style == "sketch":
-                result = cv_filters.pencil_sketch(image_bytes, color=False)
-            elif style == "sketch_color":
-                result = cv_filters.pencil_sketch(image_bytes, color=True)
-            else:
-                raise ValueError(f"Unknown CV style {style}")
-
-            await context.bot.send_photo(
-                chat_id=query.message.chat_id,
-                photo=io.BytesIO(result),
-                caption=f"{CV_STYLES[style]} ✅",
-            )
-            db.log_request(user.id, user.username, style, success=True)
-        except Exception as e:
-            logger.exception("CV style processing failed")
-            await query.message.reply_text("Something went wrong processing that image. Try another photo.")
-            db.log_request(user.id, user.username, style, success=False, error=str(e))
-        return
-
-    # AI (Gemini) style — check per-user daily quota first
-    if not db.check_and_increment_usage(user.id, DAILY_AI_LIMIT_PER_USER):
-        await query.edit_message_text(
-            f"You've hit your daily limit of {DAILY_AI_LIMIT_PER_USER} AI-style images. "
-            "Try an instant style (Cartoon/Sketch) or come back tomorrow!"
-        )
-        return
-
-    label = ai_styles.STYLE_LABELS.get(style, style)
-    await query.edit_message_text(f"Generating {label} style with AI... 🪄 (this can take 10-20s)")
-
+    await query.edit_message_text(f"Processing {label}... ⚡")
     try:
-        result = ai_styles.apply_ai_style(image_bytes, style)
+        result = filter_fn(image_bytes)
         await context.bot.send_photo(
             chat_id=query.message.chat_id,
             photo=io.BytesIO(result),
             caption=f"{label} ✅",
         )
         db.log_request(user.id, user.username, style, success=True)
-    except ai_styles.QuotaExceededError as e:
-        await query.message.reply_text(
-            "⚠️ The AI service is rate-limited right now. Please try again in a few minutes."
-        )
-        db.log_request(user.id, user.username, style, success=False, error=str(e))
     except Exception as e:
-        logger.exception("AI style processing failed")
-        await query.message.reply_text(
-            "Something went wrong generating that style. This can happen if the photo "
-            "triggered a content filter — try a different photo or style."
-        )
+        logger.exception("Style processing failed")
+        await query.message.reply_text("Something went wrong processing that image. Try another photo.")
         db.log_request(user.id, user.username, style, success=False, error=str(e))
 
 
@@ -140,6 +113,6 @@ async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     count = db.get_user_usage_today(user.id)
     await update.message.reply_text(
-        f"You've used {count}/{DAILY_AI_LIMIT_PER_USER} AI-style generations today.\n"
-        "Instant styles (Cartoon/Sketch) don't count toward this limit."
+        f"You've generated {count} styled image(s) today. All styles are instant "
+        "and unlimited — no daily cap."
     )

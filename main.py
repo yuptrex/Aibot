@@ -7,6 +7,7 @@ a port (which is what causes Render to time out and kill the deploy).
 """
 
 import os
+import asyncio
 import logging
 
 from telegram import Update
@@ -35,6 +36,16 @@ def build_app() -> Application:
 
 
 def main():
+    # Python 3.14 removed the implicit "create a loop if none exists"
+    # behavior of asyncio.get_event_loop(), which PTB's run_webhook() relies
+    # on internally. Creating and setting the loop explicitly here keeps
+    # this working regardless of which Python version the host actually uses.
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     application = build_app()
 
     render_url = os.environ.get("RENDER_EXTERNAL_URL")  # auto-set by Render
