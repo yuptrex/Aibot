@@ -69,8 +69,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]  # highest resolution
     file = await photo.get_file()
 
-    # Save the file_id so the callback handler can fetch it again later
-    context.user_data["last_photo_file_id"] = file.file_id
+    # Always store the ORIGINAL uploaded photo's file_id. Every restyle,
+    # no matter how many times the user taps another style button, re-fetches
+    # from this same original — never from a previously styled result.
+    context.user_data["original_photo_file_id"] = file.file_id
     context.user_data.pop("awaiting_percent_for", None)
 
     await update.message.reply_text(
@@ -115,34 +117,37 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     user = query.from_user
-    file_id = context.user_data.get("last_photo_file_id")
+    file_id = context.user_data.get("original_photo_file_id")
+    chat_id = query.message.chat_id
 
     if not file_id:
-        await query.edit_message_text(
-            "I don't have a photo to work with — please send a new photo first."
+        # query.message may be a photo (no editable text) or a text message —
+        # reply_text always works safely on either, unlike edit_message_text.
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="I don't have a photo to work with — please send a new photo first.",
         )
         return
 
     _, style = query.data.split(":", 1)
 
     if style not in STYLES:
-        await query.edit_message_text("Unknown style — please send the photo again.")
+        await context.bot.send_message(chat_id=chat_id, text="Unknown style — please send the photo again.")
         return
 
     if style in NEEDS_PERCENT:
         context.user_data["awaiting_percent_for"] = style
-        await query.edit_message_text(
-            f"{STYLES[style][0]} selected.\n\n"
-            "Send a number between 1-100 for how strong the effect should be "
-            "(e.g. 30 for subtle, 80 for heavy)."
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"{STYLES[style][0]} selected.\n\n"
+                "Send a number between 1-100 for how strong the effect should be "
+                "(e.g. 30 for subtle, 80 for heavy)."
+            ),
         )
         return
 
-    try:
-        await query.message.delete()
-    except Exception:
-        pass
-    await _run_style(query.message.chat_id, context, user, file_id, style)
+    await _run_style(chat_id, context, user, file_id, style)
 
 
 async def handle_percent_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -157,7 +162,7 @@ async def handle_percent_reply(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     pct = int(text)
-    file_id = context.user_data.get("last_photo_file_id")
+    file_id = context.user_data.get("original_photo_file_id")
     if not file_id:
         await update.message.reply_text("I don't have a photo to work with — please send a new photo first.")
         context.user_data.pop("awaiting_percent_for", None)
