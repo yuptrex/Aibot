@@ -26,6 +26,33 @@ def _encode(img: np.ndarray, quality: int = 92) -> bytes:
     return encoded.tobytes()
 
 
+def aesthetic_blur(image_bytes: bytes, intensity: int = 50) -> bytes:
+    """
+    Soft dreamy blur effect, scaled by intensity 1-100.
+    Blends a Gaussian-blurred + softly brightened version of the image with
+    the sharp original — higher intensity means more blur strength and a
+    stronger dreamy glow blended in.
+    """
+    intensity = max(1, min(100, int(intensity)))
+    img = _decode(image_bytes)
+
+    # Blur kernel size scales with intensity (must be odd, grows with %)
+    k = int(3 + (intensity / 100) * 40)
+    if k % 2 == 0:
+        k += 1
+
+    blurred = cv2.GaussianBlur(img, (k, k), 0)
+
+    # Soft glow: brighten the blurred layer slightly for a dreamy look
+    glow = cv2.convertScaleAbs(blurred, alpha=1.08, beta=12)
+
+    # Blend sharp original with the soft glow layer, weighted by intensity
+    alpha = intensity / 100.0  # how much of the blur/glow to apply
+    result = cv2.addWeighted(img, 1 - alpha, glow, alpha, 0)
+
+    return _encode(result)
+
+
 def cartoonify(image_bytes: bytes) -> bytes:
     """Bilateral-filter + edge-mask cartoon effect."""
     img = _decode(image_bytes)

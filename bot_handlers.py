@@ -12,17 +12,21 @@ logger = logging.getLogger(__name__)
 # All styles are instant, local OpenCV/PIL processing — no API calls, no
 # rate limits, no cost. Nothing here ever calls out to the network.
 STYLES = {
-    "cartoon":       ("🖍️ Cartoon",        lambda b: cv_filters.cartoonify(b)),
-    "sketch":        ("✏️ Pencil Sketch",   lambda b: cv_filters.pencil_sketch(b, color=False)),
-    "sketch_color":  ("🎨 Color Sketch",    lambda b: cv_filters.pencil_sketch(b, color=True)),
-    "oil":           ("🖼️ Oil Painting",    lambda b: cv_filters.oil_painting(b)),
-    "sepia":         ("📜 Sepia",           lambda b: cv_filters.sepia(b)),
-    "bw":            ("⚫ Black & White",    lambda b: cv_filters.black_and_white(b)),
-    "negative":      ("🌗 Negative",         lambda b: cv_filters.negative(b)),
-    "emboss":        ("🪙 Emboss",           lambda b: cv_filters.emboss(b)),
-    "hdr":           ("✨ HDR Glow",         lambda b: cv_filters.hdr_glow(b)),
-    "vintage":       ("🎞️ Warm Vintage",    lambda b: cv_filters.warm_vintage(b)),
+    "cartoon":       ("🖍️ Cartoon",        lambda b, pct=None: cv_filters.cartoonify(b)),
+    "sketch":        ("✏️ Pencil Sketch",   lambda b, pct=None: cv_filters.pencil_sketch(b, color=False)),
+    "sketch_color":  ("🎨 Color Sketch",    lambda b, pct=None: cv_filters.pencil_sketch(b, color=True)),
+    "oil":           ("🖼️ Oil Painting",    lambda b, pct=None: cv_filters.oil_painting(b)),
+    "sepia":         ("📜 Sepia",           lambda b, pct=None: cv_filters.sepia(b)),
+    "bw":            ("⚫ Black & White",    lambda b, pct=None: cv_filters.black_and_white(b)),
+    "negative":      ("🌗 Negative",         lambda b, pct=None: cv_filters.negative(b)),
+    "emboss":        ("🪙 Emboss",           lambda b, pct=None: cv_filters.emboss(b)),
+    "hdr":           ("✨ HDR Glow",         lambda b, pct=None: cv_filters.hdr_glow(b)),
+    "vintage":       ("🎞️ Warm Vintage",    lambda b, pct=None: cv_filters.warm_vintage(b)),
+    "blur":          ("🌫️ Aesthetic Blur",  lambda b, pct=50: cv_filters.aesthetic_blur(b, intensity=pct)),
 }
+
+# Styles listed here prompt the user for a 1-100 intensity value before running.
+NEEDS_PERCENT = {"blur"}
 
 STYLE_MENU = [
     [
@@ -45,6 +49,9 @@ STYLE_MENU = [
         InlineKeyboardButton(STYLES["hdr"][0], callback_data="cv:hdr"),
         InlineKeyboardButton(STYLES["vintage"][0], callback_data="cv:vintage"),
     ],
+    [
+        InlineKeyboardButton(STYLES["blur"][0], callback_data="cv:blur"),
+    ],
 ]
 
 
@@ -62,10 +69,43 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Save the file_id so the callback handler can fetch it again later
     context.user_data["last_photo_file_id"] = file.file_id
+    context.user_data.pop("awaiting_percent_for", None)
 
     await update.message.reply_text(
         "Choose a style:", reply_markup=InlineKeyboardMarkup(STYLE_MENU)
     )
+
+
+async def _run_style(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id, style, pct=None):
+    label, filter_fn = STYLES[style]
+
+    tg_file = await context.bot.get_file(file_id)
+    image_buf = io.BytesIO()
+    await tg_file.download_to_memory(image_buf)
+    image_bytes = image_buf.getvalue()
+
+    processing_msg = await context.bot.send_message(chat_id=chat_id, text=f"Processing {label}... ⚡")
+    try:
+        result = filter_fn(image_bytes, pct) if pct is not None else filter_fn(image_bytes)
+        caption = f"{label} ✅" + (f" ({pct}%)" if pct is not None else "")
+        await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=io.BytesIO(result),
+            caption=f"{caption}\n\nWant to see it in another style?",
+            reply_markup=InlineKeyboardMarkup(STYLE_MENU),
+        )
+        db.log_request(user.id, user.username, style, success=True)
+    except Exception as e:
+        logger.exception("Style processing failed")
+        await context.bot.send_message(
+            chat_id=chat_id, text="Something went wrong processing that image. Try another photo."
+        )
+        db.log_request(user.id, user.username, style, success=False, error=str(e))
+    finally:
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
 
 
 async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -87,27 +127,42 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.edit_message_text("Unknown style — please send the photo again.")
         return
 
-    label, filter_fn = STYLES[style]
-
-    tg_file = await context.bot.get_file(file_id)
-    image_buf = io.BytesIO()
-    await tg_file.download_to_memory(image_buf)
-    image_bytes = image_buf.getvalue()
-
-    await query.edit_message_text(f"Processing {label}... ⚡")
-    try:
-        result = filter_fn(image_bytes)
-        await context.bot.send_photo(
-            chat_id=query.message.chat_id,
-            photo=io.BytesIO(result),
-            caption=f"{label} ✅\n\nWant to see it in another style?",
-            reply_markup=InlineKeyboardMarkup(STYLE_MENU),
+    if style in NEEDS_PERCENT:
+        context.user_data["awaiting_percent_for"] = style
+        await query.edit_message_text(
+            f"{STYLES[style][0]} selected.\n\n"
+            "Send a number between 1-100 for how strong the effect should be "
+            "(e.g. 30 for subtle, 80 for heavy)."
         )
-        db.log_request(user.id, user.username, style, success=True)
-    except Exception as e:
-        logger.exception("Style processing failed")
-        await query.message.reply_text("Something went wrong processing that image. Try another photo.")
-        db.log_request(user.id, user.username, style, success=False, error=str(e))
+        return
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    await _run_style(query.message.chat_id, context, user, file_id, style)
+
+
+async def handle_percent_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Catches the plain-text number reply after an Aesthetic Blur-type style is picked."""
+    style = context.user_data.get("awaiting_percent_for")
+    if not style:
+        return  # not waiting on a percent input, ignore (let other handlers process it)
+
+    text = (update.message.text or "").strip()
+    if not text.isdigit() or not (1 <= int(text) <= 100):
+        await update.message.reply_text("Please send a whole number between 1 and 100.")
+        return
+
+    pct = int(text)
+    file_id = context.user_data.get("last_photo_file_id")
+    if not file_id:
+        await update.message.reply_text("I don't have a photo to work with — please send a new photo first.")
+        context.user_data.pop("awaiting_percent_for", None)
+        return
+
+    context.user_data.pop("awaiting_percent_for", None)
+    await _run_style(update.effective_chat.id, context, update.effective_user, file_id, style, pct=pct)
 
 
 async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
