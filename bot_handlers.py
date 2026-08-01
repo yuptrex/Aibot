@@ -23,10 +23,11 @@ STYLES = {
     "hdr":           ("✨ HDR Glow",         lambda b, pct=None: cv_filters.hdr_glow(b)),
     "vintage":       ("🎞️ Warm Vintage",    lambda b, pct=None: cv_filters.warm_vintage(b)),
     "blur":          ("🌫️ Aesthetic Blur",  lambda b, pct=50: cv_filters.aesthetic_blur(b, intensity=pct)),
+    "glow":          ("🌅 Aesthetic Glow",  lambda b, pct=100: cv_filters.aesthetic_glow(b, intensity=pct)),
 }
 
 # Styles listed here prompt the user for a 1-100 intensity value before running.
-NEEDS_PERCENT = {"blur"}
+NEEDS_PERCENT = {"blur", "glow"}
 
 STYLE_MENU = [
     [
@@ -51,6 +52,7 @@ STYLE_MENU = [
     ],
     [
         InlineKeyboardButton(STYLES["blur"][0], callback_data="cv:blur"),
+        InlineKeyboardButton(STYLES["glow"][0], callback_data="cv:glow"),
     ],
 ]
 

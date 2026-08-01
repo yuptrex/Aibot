@@ -1,18 +1,20 @@
 # Telegram Photo Style Bot
 
-Turns a photo into one of 11 instant art styles — Cartoon, Pencil Sketch,
+Turns a photo into one of 12 instant art styles — Cartoon, Pencil Sketch,
 Color Sketch, Oil Painting, Sepia, Black & White, Negative, Emboss, HDR Glow,
-Warm Vintage, and Aesthetic Blur (adjustable 1-100% intensity). Everything
-runs locally with OpenCV. No AI models, no API keys, no rate limits, no
-external network calls of any kind.
+Warm Vintage, Aesthetic Blur (directional motion-blur drift effect,
+adjustable 1-100%), and Aesthetic Glow (full moody color-grade: contrast,
+shadows/highlights, warm temperature shift, muted filter, film grain,
+vignette — adjustable 1-100%). Everything runs locally with OpenCV. No AI
+models, no API keys, no rate limits, no external network calls of any kind.
 
 ## How it works
 
-- All 11 styles are pure OpenCV image processing (`cv_filters.py`) — pixel
+- All 12 styles are pure OpenCV image processing (`cv_filters.py`) — pixel
   math only, no AI, no third-party service, no cost, no daily cap.
-- **Aesthetic Blur** is adjustable: after picking it, the bot asks for a
-  number 1-100 (how strong the effect should be) and applies it to that
-  percentage before generating the result.
+- **Aesthetic Blur** and **Aesthetic Glow** are adjustable: after picking
+  either, the bot asks for a number 1-100 (how strong the effect should be)
+  and scales the effect to that percentage before generating the result.
 - **MongoDB** logs every request (for your own visibility/usage stats).
 
 ## 1. Get your credentials
