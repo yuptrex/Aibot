@@ -100,7 +100,8 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         await context.bot.send_photo(
             chat_id=query.message.chat_id,
             photo=io.BytesIO(result),
-            caption=f"{label} ✅",
+            caption=f"{label} ✅\n\nWant to see it in another style?",
+            reply_markup=InlineKeyboardMarkup(STYLE_MENU),
         )
         db.log_request(user.id, user.username, style, success=True)
     except Exception as e:
