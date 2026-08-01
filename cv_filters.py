@@ -26,15 +26,22 @@ def _encode(img: np.ndarray, quality: int = 92) -> bytes:
     return encoded.tobytes()
 
 
-def aesthetic_blur(image_bytes: bytes, intensity: int = 50, angle: float = 90.0) -> bytes:
+def aesthetic_blur(image_bytes: bytes, intensity: int = 50, angle: float = 90.0, grayscale: bool = False) -> bytes:
     """
     Directional motion-blur "dreamy drift" effect — like a subject caught
     mid-movement in a field, streaked softly in one direction, rather than
     an even all-over Gaussian blur. Intensity 1-100 controls streak length
     and how much of the original sharp image blends back in.
+    If grayscale=True, the image is converted to black & white first, then
+    the same directional blur/drift is applied on top.
     """
     intensity = max(1, min(100, int(intensity)))
     img = _decode(image_bytes)
+
+    if grayscale:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        img = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
     h, w = img.shape[:2]
 
     # Streak length scales with intensity — longer streak = stronger drift.

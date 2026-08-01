@@ -1,20 +1,25 @@
 # Telegram Photo Style Bot
 
-Turns a photo into one of 12 instant art styles — Cartoon, Pencil Sketch,
+Turns a photo into one of 13 instant art styles — Cartoon, Pencil Sketch,
 Color Sketch, Oil Painting, Sepia, Black & White, Negative, Emboss, HDR Glow,
 Warm Vintage, Aesthetic Blur (directional motion-blur drift effect,
-adjustable 1-100%), and Aesthetic Glow (full moody color-grade: contrast,
-shadows/highlights, warm temperature shift, muted filter, film grain,
-vignette — adjustable 1-100%). Everything runs locally with OpenCV. No AI
-models, no API keys, no rate limits, no external network calls of any kind.
+adjustable 1-100%), Aesthetic Blur B/W (same drift effect, always in black &
+white, adjustable 1-100%), and Aesthetic Glow (full moody color-grade:
+contrast, shadows/highlights, warm temperature shift, muted filter, film
+grain, vignette — adjustable 1-100%). Everything runs locally with OpenCV.
+No AI models, no API keys, no rate limits, no external network calls of any
+kind.
 
 ## How it works
 
-- All 12 styles are pure OpenCV image processing (`cv_filters.py`) — pixel
+- All 13 styles are pure OpenCV image processing (`cv_filters.py`) — pixel
   math only, no AI, no third-party service, no cost, no daily cap.
-- **Aesthetic Blur** and **Aesthetic Glow** are adjustable: after picking
-  either, the bot asks for a number 1-100 (how strong the effect should be)
-  and scales the effect to that percentage before generating the result.
+- **Aesthetic Blur**, **Aesthetic Blur B/W**, and **Aesthetic Glow** are
+  adjustable: after picking one, the bot asks for a number 1-100 (how strong
+  the effect should be) and scales the effect to that percentage before
+  generating the result. Aesthetic Blur B/W always converts to black & white
+  first — only the blur strength changes with the percentage, the grayscale
+  conversion itself is fixed.
 - **MongoDB** logs every request (for your own visibility/usage stats).
 
 ## 1. Get your credentials
