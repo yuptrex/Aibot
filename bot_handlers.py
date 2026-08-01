@@ -25,40 +25,72 @@ STYLES = {
     "blur":          ("🌫️ Aesthetic Blur",  lambda b, pct=50: cv_filters.aesthetic_blur(b, intensity=pct)),
     "blur_bw":       ("🌫️⚫ Aesthetic Blur B/W", lambda b, pct=50: cv_filters.aesthetic_blur(b, intensity=pct, grayscale=True)),
     "glow":          ("🌅 Aesthetic Glow",  lambda b, pct=100: cv_filters.aesthetic_glow(b, intensity=pct)),
+    "retro90s":      ("📼 90s Style",       lambda b, pct=100: cv_filters.retro_90s(b, intensity=pct)),
+
+    # ---- Page 2: "More styles" ----
+    "duotone":       ("🌆 Duotone",          lambda b, pct=None: cv_filters.duotone(b)),
+    "halftone":      ("🗞️ Halftone",        lambda b, pct=None: cv_filters.halftone(b)),
+    "glitch":        ("📡 Glitch",           lambda b, pct=None: cv_filters.glitch(b)),
+    "thermal":       ("🌡️ Thermal",         lambda b, pct=None: cv_filters.thermal(b)),
+    "cyberpunk":     ("🌃 Cyberpunk Neon",   lambda b, pct=None: cv_filters.cyberpunk_neon(b)),
+    "watercolor":    ("💧 Watercolor",       lambda b, pct=None: cv_filters.watercolor(b)),
+    "comic":         ("💥 Comic Book",       lambda b, pct=None: cv_filters.comic_book(b)),
+    "xray":          ("☠️ X-Ray",            lambda b, pct=None: cv_filters.xray(b)),
+    "infrared":      ("🌿 Infrared",         lambda b, pct=None: cv_filters.infrared(b)),
+    "stainedglass":  ("🪟 Stained Glass",    lambda b, pct=None: cv_filters.stained_glass(b)),
+    "mosaic":        ("🧩 Mosaic Tile",      lambda b, pct=None: cv_filters.mosaic_tile(b)),
+    "doubleexp":     ("👥 Double Exposure",  lambda b, pct=None: cv_filters.double_exposure(b)),
+    "pixelart":      ("👾 Pixel Art",        lambda b, pct=None: cv_filters.pixel_art(b)),
+    "chalk":         ("🖤 Chalk & Charcoal", lambda b, pct=None: cv_filters.chalk_charcoal(b)),
+    "holo":          ("🌈 Holographic",      lambda b, pct=None: cv_filters.holographic(b)),
+    "crt":           ("📺 CRT TV",           lambda b, pct=None: cv_filters.crt_tv(b)),
+    "frost":         ("❄️ Frost & Ice",      lambda b, pct=None: cv_filters.frost_ice(b)),
+    "solarize":      ("🌗 Solarize",         lambda b, pct=None: cv_filters.solarize(b)),
+    "copper":        ("🔶 Copper Etch",      lambda b, pct=None: cv_filters.copper_etch(b)),
+    "galaxy":        ("🌌 Galaxy",           lambda b, pct=None: cv_filters.galaxy(b)),
 }
 
 # Styles listed here prompt the user for a 1-100 intensity value before running.
-NEEDS_PERCENT = {"blur", "blur_bw", "glow"}
+NEEDS_PERCENT = {"blur", "blur_bw", "glow", "retro90s"}
 
-STYLE_MENU = [
-    [
-        InlineKeyboardButton(STYLES["cartoon"][0], callback_data="cv:cartoon"),
-        InlineKeyboardButton(STYLES["sketch"][0], callback_data="cv:sketch"),
-    ],
-    [
-        InlineKeyboardButton(STYLES["sketch_color"][0], callback_data="cv:sketch_color"),
-        InlineKeyboardButton(STYLES["oil"][0], callback_data="cv:oil"),
-    ],
-    [
-        InlineKeyboardButton(STYLES["sepia"][0], callback_data="cv:sepia"),
-        InlineKeyboardButton(STYLES["bw"][0], callback_data="cv:bw"),
-    ],
-    [
-        InlineKeyboardButton(STYLES["negative"][0], callback_data="cv:negative"),
-        InlineKeyboardButton(STYLES["emboss"][0], callback_data="cv:emboss"),
-    ],
-    [
-        InlineKeyboardButton(STYLES["hdr"][0], callback_data="cv:hdr"),
-        InlineKeyboardButton(STYLES["vintage"][0], callback_data="cv:vintage"),
-    ],
-    [
-        InlineKeyboardButton(STYLES["blur"][0], callback_data="cv:blur"),
-        InlineKeyboardButton(STYLES["glow"][0], callback_data="cv:glow"),
-    ],
-    [
-        InlineKeyboardButton(STYLES["blur_bw"][0], callback_data="cv:blur_bw"),
-    ],
+PAGE_1_KEYS = [
+    "cartoon", "sketch", "sketch_color", "oil", "sepia", "bw",
+    "negative", "emboss", "hdr", "vintage", "blur", "glow",
+    "blur_bw", "retro90s",
 ]
+
+PAGE_2_KEYS = [
+    "duotone", "halftone", "glitch", "thermal", "cyberpunk", "watercolor",
+    "comic", "xray", "infrared", "stainedglass", "mosaic", "doubleexp",
+    "pixelart", "chalk", "holo", "crt", "frost", "solarize", "copper", "galaxy",
+]
+
+
+def _rows_of_two(keys):
+    """Pack style keys into a grid of 2-per-row inline buttons."""
+    rows = []
+    for i in range(0, len(keys), 2):
+        pair = keys[i:i + 2]
+        rows.append([
+            InlineKeyboardButton(STYLES[k][0], callback_data=f"cv:{k}") for k in pair
+        ])
+    return rows
+
+
+def build_style_menu(page: int = 1) -> InlineKeyboardMarkup:
+    """Page 1 = original styles + '➕ More styles' button.
+    Page 2 = the 20 new styles + '⬅️ Back' button."""
+    if page == 1:
+        rows = _rows_of_two(PAGE_1_KEYS)
+        rows.append([InlineKeyboardButton("➕ More styles", callback_data="nav:more")])
+    else:
+        rows = _rows_of_two(PAGE_2_KEYS)
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="nav:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+# Page-1 menu, kept under the old name for any direct references.
+STYLE_MENU = build_style_menu(1)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -80,12 +112,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_percent_for", None)
 
     await update.message.reply_text(
-        "Choose a style:", reply_markup=InlineKeyboardMarkup(STYLE_MENU)
+        "Choose a style:", reply_markup=build_style_menu(1)
     )
 
 
 async def _run_style(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id, style, pct=None):
     label, filter_fn = STYLES[style]
+    # Reopen on whichever page the user picked this style from, so tapping
+    # around page 2 doesn't keep bouncing them back to page 1.
+    page = 2 if style in PAGE_2_KEYS else 1
 
     tg_file = await context.bot.get_file(file_id)
     image_buf = io.BytesIO()
@@ -100,7 +135,7 @@ async def _run_style(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id,
             chat_id=chat_id,
             photo=io.BytesIO(result),
             caption=f"{caption}\n\nWant to see it in another style?",
-            reply_markup=InlineKeyboardMarkup(STYLE_MENU),
+            reply_markup=build_style_menu(page),
         )
         db.log_request(user.id, user.username, style, success=True)
     except Exception as e:
@@ -120,9 +155,24 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
 
+    chat_id = query.message.chat_id
+
+    # "➕ More styles" / "⬅️ Back" just swap the button grid on the existing
+    # message — no photo needed yet, so this is handled before the file_id check.
+    if query.data.startswith("nav:"):
+        _, direction = query.data.split(":", 1)
+        page = 2 if direction == "more" else 1
+        try:
+            await query.edit_message_reply_markup(reply_markup=build_style_menu(page))
+        except Exception:
+            # Message may be too old to edit (e.g. after a long pause) — resend instead.
+            await context.bot.send_message(
+                chat_id=chat_id, text="Choose a style:", reply_markup=build_style_menu(page)
+            )
+        return
+
     user = query.from_user
     file_id = context.user_data.get("original_photo_file_id")
-    chat_id = query.message.chat_id
 
     if not file_id:
         # query.message may be a photo (no editable text) or a text message —
