@@ -1,5 +1,6 @@
 import io
 import logging
+import random
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -8,6 +9,16 @@ import cv_filters
 import db
 
 logger = logging.getLogger(__name__)
+
+# Emoji reactions known to trigger Telegram's big animated "burst" effect
+# on the sender's screen when set with is_big=True — same visual you get
+# from a long-press reaction in the app. The Bot API only lets us pick the
+# emoji; the animation itself is entirely client-side and can't be customized.
+START_REACTION_EMOJIS = ["🎉", "🔥", "❤️", "👍"]
+
+# Appended to every message that carries the style menu buttons (initial
+# prompt + every styled-photo caption).
+CREDIT_LINE = "Powered by @z5met @z5meta @x5meta"
 
 # All styles are instant, local OpenCV/PIL processing — no API calls, no
 # rate limits, no cost. Nothing here ever calls out to the network.
@@ -93,7 +104,31 @@ def build_style_menu(page: int = 1) -> InlineKeyboardMarkup:
 STYLE_MENU = build_style_menu(1)
 
 
+async def _clear_previous_menu(context: ContextTypes.DEFAULT_TYPE, chat_id):
+    """Strip the caption and buttons off whichever message currently has the
+    active style menu, so only the photo itself remains. Keeps the chat from
+    filling up with duplicate menus while never touching the photos."""
+    msg_id = context.user_data.pop("active_menu_message_id", None)
+    if not msg_id:
+        return
+    try:
+        await context.bot.edit_message_caption(
+            chat_id=chat_id, message_id=msg_id, caption=None, reply_markup=None
+        )
+    except Exception:
+        # Message may already be edited/deleted/too old — safe to ignore.
+        pass
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Big animated reaction burst on the user's /start message — is_big=True
+    # is what triggers the fullscreen animation on their screen.
+    try:
+        emoji = random.choice(START_REACTION_EMOJIS)
+        await update.message.set_reaction(reaction=emoji, is_big=True)
+    except Exception:
+        logger.exception("Failed to set reaction on /start message")
+
     await update.message.reply_text(
         "👋 Send me a photo and I'll turn it into different art styles!\n\n"
         "All styles are processed instantly, right here — no AI, no waiting, "
@@ -104,6 +139,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]  # highest resolution
     file = await photo.get_file()
+    chat_id = update.effective_chat.id
+
+    # A new photo means whatever menu was active before is now stale.
+    await _clear_previous_menu(context, chat_id)
 
     # Always store the ORIGINAL uploaded photo's file_id. Every restyle,
     # no matter how many times the user taps another style button, re-fetches
@@ -111,9 +150,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["original_photo_file_id"] = file.file_id
     context.user_data.pop("awaiting_percent_for", None)
 
-    await update.message.reply_text(
-        "Choose a style:", reply_markup=build_style_menu(1)
+    prompt_msg = await update.message.reply_text(
+        f"Choose a style:\n\n{CREDIT_LINE}", reply_markup=build_style_menu(1)
     )
+    context.user_data["active_menu_message_id"] = prompt_msg.message_id
 
 
 async def _run_style(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id, style, pct=None):
@@ -131,12 +171,18 @@ async def _run_style(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id,
     try:
         result = filter_fn(image_bytes, pct) if pct is not None else filter_fn(image_bytes)
         caption = f"{label} ✅" + (f" ({pct}%)" if pct is not None else "")
-        await context.bot.send_photo(
+
+        # Strip the caption+buttons off the previous menu message BEFORE
+        # sending the new one, so there's never a moment with two active menus.
+        await _clear_previous_menu(context, chat_id)
+
+        sent_photo = await context.bot.send_photo(
             chat_id=chat_id,
             photo=io.BytesIO(result),
-            caption=f"{caption}\n\nWant to see it in another style?",
+            caption=f"{caption}\n\nWant to see it in another style?\n\n{CREDIT_LINE}",
             reply_markup=build_style_menu(page),
         )
+        context.user_data["active_menu_message_id"] = sent_photo.message_id
         db.log_request(user.id, user.username, style, success=True)
     except Exception as e:
         logger.exception("Style processing failed")
@@ -167,7 +213,7 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             # Message may be too old to edit (e.g. after a long pause) — resend instead.
             await context.bot.send_message(
-                chat_id=chat_id, text="Choose a style:", reply_markup=build_style_menu(page)
+                chat_id=chat_id, text=f"Choose a style:\n\n{CREDIT_LINE}", reply_markup=build_style_menu(page)
             )
         return
 
