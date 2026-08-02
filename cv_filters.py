@@ -4,8 +4,24 @@ limits, zero network calls. Every style here runs instantly on your own
 server using nothing but pixel math. No AI models, no external requests.
 """
 
+import os
+
 import cv2
 import numpy as np
+
+_ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))
+_MASK_PATH = os.path.join(_ASSETS_DIR, "tech_visor_mask.png")
+
+_MASK_CANVAS_SIZE = (900, 700)
+_MASK_LEFT_EYE = (280, 250)
+_MASK_RIGHT_EYE = (620, 250)
+_MASK_FACE_TOP = 40
+_MASK_FACE_BOTTOM = 660
+_MASK_FACE_LEFT = 40
+_MASK_FACE_RIGHT = 860
+
+_face_cascade = None
+_eye_cascade = None
 
 
 def _decode(image_bytes: bytes, max_dim: int = 1024) -> np.ndarray:
@@ -847,3 +863,127 @@ def galaxy(image_bytes: bytes) -> bytes:
     blended = _blend_screen(img, nebula) * shadow_mask + img * (1 - shadow_mask)
     result = blended + star_layer * 0.5
     return _encode(np.clip(result, 0, 255).astype(np.uint8))
+
+
+def _get_cascades():
+    global _face_cascade, _eye_cascade
+    if _face_cascade is None:
+        _face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        )
+        _eye_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + "haarcascade_eye.xml"
+        )
+    return _face_cascade, _eye_cascade
+
+
+def _detect_eye_centers(gray: np.ndarray, face_box: tuple) -> tuple:
+    """
+    Given a grayscale image and a detected face (x, y, w, h), try to find the
+    left/right eye centers inside it via Haar eye cascade. Falls back to
+    proportional estimates (typical face geometry) if eye detection fails,
+    so the mask still fits reasonably even on side-angled or partially
+    obscured faces.
+    """
+    face_cascade, eye_cascade = _get_cascades()
+    x, y, w, h = face_box
+    roi = gray[y:y + h, x:x + w]
+
+    eyes = eye_cascade.detectMultiScale(roi, scaleFactor=1.1, minNeighbors=8, minSize=(int(w * 0.08), int(h * 0.08)))
+    # Keep only eyes in the upper 60% of the face box (avoids nostril/mouth false positives)
+    eyes = [e for e in eyes if (e[1] + e[3] / 2) < h * 0.6]
+
+    if len(eyes) >= 2:
+        # Sort by x position, take the two most confident/left-right pair
+        eyes = sorted(eyes, key=lambda e: e[0])
+        left_eye = eyes[0]
+        right_eye = eyes[-1]
+        lx = x + left_eye[0] + left_eye[2] / 2
+        ly = y + left_eye[1] + left_eye[3] / 2
+        rx = x + right_eye[0] + right_eye[2] / 2
+        ry = y + right_eye[1] + right_eye[3] / 2
+        return (lx, ly), (rx, ry)
+
+    # Fallback: standard proportional eye positions for a front-facing face
+    lx = x + w * 0.30
+    rx = x + w * 0.70
+    ey = y + h * 0.40
+    return (lx, ey), (rx, ey)
+
+
+def tech_visor_bw(image_bytes: bytes) -> bytes:
+    """
+    Detects the largest face in the photo, fits an original sci-fi tech-visor
+    overlay onto it (angular armored faceplate with a glowing cyan eye-strip,
+    scaled + rotated to match eye spacing/tilt), and converts everything
+    outside the mask to black & white so the masked face pops in color
+    against a grayscale scene. If no face is detected, returns the photo
+    simply converted to black & white as a safe fallback.
+    """
+    img = _decode(image_bytes, max_dim=1600)
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_eq = cv2.equalizeHist(gray)
+
+    face_cascade, _ = _get_cascades()
+    faces = face_cascade.detectMultiScale(
+        gray_eq, scaleFactor=1.08, minNeighbors=5, minSize=(int(min(h, w) * 0.15),) * 2
+    )
+
+    # Grayscale base — the final canvas the mask gets composited onto
+    bw_full = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR).astype(np.float32)
+
+    if len(faces) == 0:
+        return _encode(bw_full.astype(np.uint8))
+
+    # Use the largest detected face
+    face_box = max(faces, key=lambda f: f[2] * f[3])
+    fx, fy, fw, fh = face_box
+
+    (lx, ly), (rx, ry) = _detect_eye_centers(gray_eq, face_box)
+    # Ensure left/right are correctly ordered left-to-right in image space
+    if lx > rx:
+        (lx, ly), (rx, ry) = (rx, ry), (lx, ly)
+
+    photo_eye_dist = np.hypot(rx - lx, ry - ly)
+    photo_eye_angle = np.degrees(np.arctan2(ry - ly, rx - lx))
+    photo_eye_mid = ((lx + rx) / 2.0, (ly + ry) / 2.0)
+
+    # Load mask (with alpha) fresh each call — small file, negligible cost,
+    # avoids any shared-state mutation concerns across concurrent requests.
+    mask_rgba = cv2.imread(_MASK_PATH, cv2.IMREAD_UNCHANGED)
+    if mask_rgba is None or mask_rgba.shape[2] != 4:
+        # Asset missing/corrupt — safe fallback to plain B&W
+        return _encode(bw_full.astype(np.uint8))
+
+    mask_eye_dist = np.hypot(
+        _MASK_RIGHT_EYE[0] - _MASK_LEFT_EYE[0], _MASK_RIGHT_EYE[1] - _MASK_LEFT_EYE[1]
+    )
+    mask_eye_mid = (
+        (_MASK_LEFT_EYE[0] + _MASK_RIGHT_EYE[0]) / 2.0,
+        (_MASK_LEFT_EYE[1] + _MASK_RIGHT_EYE[1]) / 2.0,
+    )
+
+    # Scale factor: match mask's eye distance to the photo's detected eye distance
+    scale = photo_eye_dist / mask_eye_dist
+
+    # Build an affine transform: scale + rotate around mask's eye midpoint,
+    # then translate so that midpoint lands on the photo's eye midpoint.
+    rot_scale_matrix = cv2.getRotationMatrix2D(mask_eye_mid, -photo_eye_angle, scale)
+    rot_scale_matrix[0, 2] += photo_eye_mid[0] - mask_eye_mid[0]
+    rot_scale_matrix[1, 2] += photo_eye_mid[1] - mask_eye_mid[1]
+
+    warped_mask = cv2.warpAffine(
+        mask_rgba, rot_scale_matrix, (w, h),
+        flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0)
+    )
+
+    mask_bgr = warped_mask[:, :, :3].astype(np.float32)
+    mask_alpha = (warped_mask[:, :, 3].astype(np.float32) / 255.0)[:, :, None]
+
+    # Composite: color mask over grayscale photo using its alpha channel.
+    # The mask's own transparent eye-holes let the person's real (grayscale)
+    # eyes show through naturally since alpha is 0 there.
+    composited = mask_bgr * mask_alpha + bw_full * (1 - mask_alpha)
+
+    return _encode(np.clip(composited, 0, 255).astype(np.uint8))

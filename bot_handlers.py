@@ -10,20 +10,11 @@ import db
 
 logger = logging.getLogger(__name__)
 
-# The full set of standard (non-custom) emoji Telegram allows for message
-# reactions via the Bot API's ReactionTypeEmoji. Bots can only use one of
-# these fixed emoji per reaction (custom emoji reactions require the emoji
-# to already be present on the message, or explicit admin permission).
-ALL_REACTION_EMOJIS = [
-    "👍", "👎", "❤️", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱",
-    "🤬", "😢", "🎉", "🤩", "🤮", "💩", "🙏", "👌", "🕊️", "🤡",
-    "🥱", "🥴", "😍", "🐳", "❤️‍🔥", "🌚", "🌭", "💯", "🤣", "⚡",
-    "🍌", "🏆", "💔", "🤨", "😐", "🍓", "🍾", "💋", "🖕", "😈",
-    "😴", "😭", "🤓", "👻", "👨‍💻", "👀", "🎃", "🙈", "😇", "😨",
-    "🤝", "✍️", "🤗", "🫡", "🎅", "🎄", "☃️", "💅", "🤪", "🗿",
-    "🆒", "💘", "🙉", "🦄", "😘", "💊", "🙊", "😎", "👾", "🤷‍♂️",
-    "🤷", "🤷‍♀️", "😡",
-]
+# Emoji reactions known to trigger Telegram's big animated "burst" effect
+# on the sender's screen when set with is_big=True — same visual you get
+# from a long-press reaction in the app. The Bot API only lets us pick the
+# emoji; the animation itself is entirely client-side and can't be customized.
+START_REACTION_EMOJIS = ["🎉", "🔥", "❤️", "👍"]
 
 # Appended to every message that carries the style menu buttons (initial
 # prompt + every styled-photo caption).
@@ -46,6 +37,8 @@ STYLES = {
     "blur_bw":       ("🌫️⚫ Aesthetic Blur B/W", lambda b, pct=50: cv_filters.aesthetic_blur(b, intensity=pct, grayscale=True)),
     "glow":          ("🌅 Aesthetic Glow",  lambda b, pct=100: cv_filters.aesthetic_glow(b, intensity=pct)),
     "retro90s":      ("📼 90s Style",       lambda b, pct=100: cv_filters.retro_90s(b, intensity=pct)),
+    "heromask":      ("🤖 Tech Visor B/W",  lambda b, pct=None: cv_filters.tech_visor_bw(b)),
+
 
     # ---- Page 2: "More styles" ----
     "duotone":       ("🌆 Duotone",          lambda b, pct=None: cv_filters.duotone(b)),
@@ -76,7 +69,7 @@ NEEDS_PERCENT = {"blur", "blur_bw", "glow", "retro90s"}
 PAGE_1_KEYS = [
     "cartoon", "sketch", "sketch_color", "oil", "sepia", "bw",
     "negative", "emboss", "hdr", "vintage", "blur", "glow",
-    "blur_bw", "retro90s",
+    "blur_bw", "retro90s", "heromask",
 ]
 
 PAGE_2_KEYS = [
@@ -113,30 +106,6 @@ def build_style_menu(page: int = 1) -> InlineKeyboardMarkup:
 STYLE_MENU = build_style_menu(1)
 
 
-async def _react_random(message):
-    """Set a random big animated-burst reaction on any message. is_big=True
-    is what triggers Telegram's fullscreen burst animation on the sender's
-    screen — used on every user-originated message in the chat, including
-    the echoed button-tap text below."""
-    try:
-        emoji = random.choice(ALL_REACTION_EMOJIS)
-        await message.set_reaction(reaction=emoji, is_big=True)
-    except Exception:
-        logger.exception("Failed to set reaction on message %s", getattr(message, "message_id", "?"))
-
-
-async def _echo_button_tap(query, context: ContextTypes.DEFAULT_TYPE, button_text: str):
-    """Post the tapped inline button's exact label as its own chat message,
-    as if the user had typed it, then react to that message. Telegram's Bot
-    API has no way to make a message literally appear 'sent by the user' —
-    only the user's own client can do that — so this posts it as a normal
-    message immediately after the tap, which is the closest real equivalent."""
-    chat_id = query.message.chat_id
-    echoed = await context.bot.send_message(chat_id=chat_id, text=button_text)
-    await _react_random(echoed)
-    return echoed
-
-
 async def _clear_previous_menu(context: ContextTypes.DEFAULT_TYPE, chat_id):
     """Strip the caption and buttons off whichever message currently has the
     active style menu, so only the photo itself remains. Keeps the chat from
@@ -154,7 +123,13 @@ async def _clear_previous_menu(context: ContextTypes.DEFAULT_TYPE, chat_id):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _react_random(update.message)
+    # Big animated reaction burst on the user's /start message — is_big=True
+    # is what triggers the fullscreen animation on their screen.
+    try:
+        emoji = random.choice(START_REACTION_EMOJIS)
+        await update.message.set_reaction(reaction=emoji, is_big=True)
+    except Exception:
+        logger.exception("Failed to set reaction on /start message")
 
     await update.message.reply_text(
         "👋 Send me a photo and I'll turn it into different art styles!\n\n"
@@ -164,8 +139,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await _react_random(update.message)
-
     photo = update.message.photo[-1]  # highest resolution
     file = await photo.get_file()
     chat_id = update.effective_chat.id
@@ -232,19 +205,6 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     chat_id = query.message.chat_id
 
-    # Figure out the tapped button's visible label so it can be echoed into
-    # the chat as text, exactly as the user would have typed it.
-    if query.data.startswith("nav:"):
-        _, direction = query.data.split(":", 1)
-        tapped_label = "➕ More styles" if direction == "more" else "⬅️ Back"
-    elif query.data.startswith("cv:"):
-        _, style_key = query.data.split(":", 1)
-        tapped_label = STYLES[style_key][0] if style_key in STYLES else query.data
-    else:
-        tapped_label = query.data
-
-    await _echo_button_tap(query, context, tapped_label)
-
     # "➕ More styles" / "⬅️ Back" just swap the button grid on the existing
     # message — no photo needed yet, so this is handled before the file_id check.
     if query.data.startswith("nav:"):
@@ -297,8 +257,6 @@ async def handle_percent_reply(update: Update, context: ContextTypes.DEFAULT_TYP
     style = context.user_data.get("awaiting_percent_for")
     if not style:
         return  # not waiting on a percent input, ignore (let other handlers process it)
-
-    await _react_random(update.message)
 
     text = (update.message.text or "").strip()
     if not text.isdigit() or not (1 <= int(text) <= 100):
