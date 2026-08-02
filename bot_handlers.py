@@ -78,6 +78,14 @@ PAGE_2_KEYS = [
     "pixelart", "chalk", "holo", "crt", "frost", "solarize", "copper", "galaxy",
 ]
 
+# Ordered list of mask ids shown in the "Masks" browser (matches the
+# cv_filters.MASKS registry keys).
+MASK_KEYS = [
+    "tech_visor", "crimson_ranger", "violet_oracle", "amber_sentinel",
+    "emerald_phantom", "ice_marshal", "magma_warden", "slate_wraith",
+    "gold_paragon", "void_seraph", "ash_centurion",
+]
+
 
 def _rows_of_two(keys):
     """Pack style keys into a grid of 2-per-row inline buttons."""
@@ -95,10 +103,21 @@ def build_style_menu(page: int = 1) -> InlineKeyboardMarkup:
     Page 2 = the 20 new styles + '⬅️ Back' button."""
     if page == 1:
         rows = _rows_of_two(PAGE_1_KEYS)
+        rows.append([InlineKeyboardButton("🎭 Masks", callback_data="nav:masks")])
         rows.append([InlineKeyboardButton("➕ More styles", callback_data="nav:more")])
     else:
         rows = _rows_of_two(PAGE_2_KEYS)
         rows.append([InlineKeyboardButton("⬅️ Back", callback_data="nav:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def build_mask_list_menu() -> InlineKeyboardMarkup:
+    """One button per mask (opens its preview), plus a Back button."""
+    rows = []
+    for key in MASK_KEYS:
+        label = cv_filters.MASKS[key]["label"]
+        rows.append([InlineKeyboardButton(label, callback_data=f"maskprev:{key}")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="nav:back")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -152,6 +171,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["original_photo_file_id"] = file.file_id
     context.user_data.pop("awaiting_percent_for", None)
 
+    # If the user picked a mask from the "🎭 Masks" browser before sending
+    # this photo, run that mask immediately instead of showing the style menu.
+    mask_id = context.user_data.pop("awaiting_mask_photo", None)
+    if mask_id and mask_id in cv_filters.MASKS:
+        await _run_mask(chat_id, context, update.effective_user, file.file_id, mask_id)
+        return
+
     prompt_msg = await update.message.reply_text(
         f"Choose a style:\n\n{CREDIT_LINE}", reply_markup=build_style_menu(1)
     )
@@ -199,6 +225,45 @@ async def _run_style(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id,
             pass
 
 
+async def _run_mask(chat_id, context: ContextTypes.DEFAULT_TYPE, user, file_id, mask_id):
+    """Fits the chosen mask onto the user's photo and sends the result,
+    mirroring _run_style's flow (processing message, menu cleanup, logging)."""
+    meta = cv_filters.MASKS[mask_id]
+    label = meta["label"]
+
+    tg_file = await context.bot.get_file(file_id)
+    image_buf = io.BytesIO()
+    await tg_file.download_to_memory(image_buf)
+    image_bytes = image_buf.getvalue()
+
+    processing_msg = await context.bot.send_message(chat_id=chat_id, text=f"Fitting {label}... ⚡")
+    try:
+        result = cv_filters.apply_mask_by_id(image_bytes, mask_id)
+        caption = f"{label} ✅"
+
+        await _clear_previous_menu(context, chat_id)
+
+        sent_photo = await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=io.BytesIO(result),
+            caption=f"{caption}\n\nWant to try another mask or style?\n\n{CREDIT_LINE}",
+            reply_markup=build_style_menu(1),
+        )
+        context.user_data["active_menu_message_id"] = sent_photo.message_id
+        db.log_request(user.id, user.username, f"mask:{mask_id}", success=True)
+    except Exception as e:
+        logger.exception("Mask processing failed")
+        await context.bot.send_message(
+            chat_id=chat_id, text="Something went wrong fitting that mask. Try another photo — a clear, front-facing face works best."
+        )
+        db.log_request(user.id, user.username, f"mask:{mask_id}", success=False, error=str(e))
+    finally:
+        try:
+            await processing_msg.delete()
+        except Exception:
+            pass
+
+
 async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -207,6 +272,14 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # "➕ More styles" / "⬅️ Back" just swap the button grid on the existing
     # message — no photo needed yet, so this is handled before the file_id check.
+    if query.data == "nav:masks":
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"🎭 Pick a mask to preview:\n\n{CREDIT_LINE}",
+            reply_markup=build_mask_list_menu(),
+        )
+        return
+
     if query.data.startswith("nav:"):
         _, direction = query.data.split(":", 1)
         page = 2 if direction == "more" else 1
@@ -217,6 +290,39 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
             await context.bot.send_message(
                 chat_id=chat_id, text=f"Choose a style:\n\n{CREDIT_LINE}", reply_markup=build_style_menu(page)
             )
+        return
+
+    if query.data.startswith("maskprev:"):
+        _, mask_id = query.data.split(":", 1)
+        meta = cv_filters.MASKS.get(mask_id)
+        if not meta:
+            await context.bot.send_message(chat_id=chat_id, text="Unknown mask — please try again.")
+            return
+        try:
+            with open(meta["preview"], "rb") as fp:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=fp,
+                    caption=f"{meta['label']}",
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("✅ Use this mask", callback_data=f"maskuse:{mask_id}")]]
+                    ),
+                )
+        except FileNotFoundError:
+            logger.exception("Missing preview image for mask %s", mask_id)
+            await context.bot.send_message(chat_id=chat_id, text="Preview unavailable for that mask right now.")
+        return
+
+    if query.data.startswith("maskuse:"):
+        _, mask_id = query.data.split(":", 1)
+        if mask_id not in cv_filters.MASKS:
+            await context.bot.send_message(chat_id=chat_id, text="Unknown mask — please try again.")
+            return
+        context.user_data["awaiting_mask_photo"] = mask_id
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"{cv_filters.MASKS[mask_id]['label']} selected 🎭\n\nSend me a photo with a clear, front-facing face and I'll fit the mask to it.",
+        )
         return
 
     user = query.from_user

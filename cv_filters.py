@@ -15,6 +15,92 @@ _MASK_PATH = os.path.join(_ASSETS_DIR, "tech_visor_mask.png")
 _MASK_CANVAS_SIZE = (900, 700)
 _MASK_LEFT_EYE = (280, 250)
 _MASK_RIGHT_EYE = (620, 250)
+
+# ---------------------------------------------------------------------------
+# Mask registry: every fittable face-mask overlay, original + the 10 new
+# ones. All assets share the 900x700 canvas, so a single eye-anchor pair
+# works well for all of them (each was authored with its eye-strip centered
+# around the same coordinates). Key = mask id used in callback_data.
+# ---------------------------------------------------------------------------
+MASKS = {
+    "tech_visor": {
+        "label": "🤖 Tech Visor",
+        "file": os.path.join(_ASSETS_DIR, "tech_visor_mask.png"),
+        "preview": os.path.join(_ASSETS_DIR, "tech_visor_mask_preview.jpg"),
+        "left_eye": (280, 250),
+        "right_eye": (620, 250),
+    },
+    "crimson_ranger": {
+        "label": "🔴 Crimson Ranger",
+        "file": os.path.join(_ASSETS_DIR, "mask_crimson_ranger.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_crimson_ranger_preview.jpg"),
+        "left_eye": (280, 290),
+        "right_eye": (620, 290),
+    },
+    "violet_oracle": {
+        "label": "🟣 Violet Oracle",
+        "file": os.path.join(_ASSETS_DIR, "mask_violet_oracle.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_violet_oracle_preview.jpg"),
+        "left_eye": (280, 295),
+        "right_eye": (620, 295),
+    },
+    "amber_sentinel": {
+        "label": "🟠 Amber Sentinel",
+        "file": os.path.join(_ASSETS_DIR, "mask_amber_sentinel.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_amber_sentinel_preview.jpg"),
+        "left_eye": (280, 290),
+        "right_eye": (620, 290),
+    },
+    "emerald_phantom": {
+        "label": "🟢 Emerald Phantom",
+        "file": os.path.join(_ASSETS_DIR, "mask_emerald_phantom.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_emerald_phantom_preview.jpg"),
+        "left_eye": (280, 315),
+        "right_eye": (620, 315),
+    },
+    "ice_marshal": {
+        "label": "🔵 Ice Marshal",
+        "file": os.path.join(_ASSETS_DIR, "mask_ice_marshal.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_ice_marshal_preview.jpg"),
+        "left_eye": (280, 280),
+        "right_eye": (620, 280),
+    },
+    "magma_warden": {
+        "label": "🟥 Magma Warden",
+        "file": os.path.join(_ASSETS_DIR, "mask_magma_warden.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_magma_warden_preview.jpg"),
+        "left_eye": (280, 300),
+        "right_eye": (620, 300),
+    },
+    "slate_wraith": {
+        "label": "⚪ Slate Wraith",
+        "file": os.path.join(_ASSETS_DIR, "mask_slate_wraith.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_slate_wraith_preview.jpg"),
+        "left_eye": (280, 320),
+        "right_eye": (620, 320),
+    },
+    "gold_paragon": {
+        "label": "🟡 Gold Paragon",
+        "file": os.path.join(_ASSETS_DIR, "mask_gold_paragon.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_gold_paragon_preview.jpg"),
+        "left_eye": (280, 290),
+        "right_eye": (620, 290),
+    },
+    "void_seraph": {
+        "label": "🟪 Void Seraph",
+        "file": os.path.join(_ASSETS_DIR, "mask_void_seraph.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_void_seraph_preview.jpg"),
+        "left_eye": (280, 270),
+        "right_eye": (620, 270),
+    },
+    "ash_centurion": {
+        "label": "⬛ Ash Centurion",
+        "file": os.path.join(_ASSETS_DIR, "mask_ash_centurion.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mask_ash_centurion_preview.jpg"),
+        "left_eye": (280, 295),
+        "right_eye": (620, 295),
+    },
+}
 _MASK_FACE_TOP = 40
 _MASK_FACE_BOTTOM = 660
 _MASK_FACE_LEFT = 40
@@ -911,14 +997,16 @@ def _detect_eye_centers(gray: np.ndarray, face_box: tuple) -> tuple:
     return (lx, ey), (rx, ey)
 
 
-def tech_visor_bw(image_bytes: bytes) -> bytes:
+def apply_face_mask(image_bytes: bytes, mask_path: str, mask_left_eye, mask_right_eye) -> bytes:
     """
-    Detects the largest face in the photo, fits an original sci-fi tech-visor
-    overlay onto it (angular armored faceplate with a glowing cyan eye-strip,
-    scaled + rotated to match eye spacing/tilt), and converts everything
+    Detects the largest face in the photo, fits the given mask PNG onto it
+    (scaled + rotated to match eye spacing/tilt), and converts everything
     outside the mask to black & white so the masked face pops in color
     against a grayscale scene. If no face is detected, returns the photo
     simply converted to black & white as a safe fallback.
+
+    mask_left_eye / mask_right_eye are the (x, y) eye-anchor coordinates
+    within the mask PNG's own canvas, used to compute the fit transform.
     """
     img = _decode(image_bytes, max_dim=1600)
     h, w = img.shape[:2]
@@ -951,17 +1039,17 @@ def tech_visor_bw(image_bytes: bytes) -> bytes:
 
     # Load mask (with alpha) fresh each call — small file, negligible cost,
     # avoids any shared-state mutation concerns across concurrent requests.
-    mask_rgba = cv2.imread(_MASK_PATH, cv2.IMREAD_UNCHANGED)
+    mask_rgba = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
     if mask_rgba is None or mask_rgba.shape[2] != 4:
         # Asset missing/corrupt — safe fallback to plain B&W
         return _encode(bw_full.astype(np.uint8))
 
     mask_eye_dist = np.hypot(
-        _MASK_RIGHT_EYE[0] - _MASK_LEFT_EYE[0], _MASK_RIGHT_EYE[1] - _MASK_LEFT_EYE[1]
+        mask_right_eye[0] - mask_left_eye[0], mask_right_eye[1] - mask_left_eye[1]
     )
     mask_eye_mid = (
-        (_MASK_LEFT_EYE[0] + _MASK_RIGHT_EYE[0]) / 2.0,
-        (_MASK_LEFT_EYE[1] + _MASK_RIGHT_EYE[1]) / 2.0,
+        (mask_left_eye[0] + mask_right_eye[0]) / 2.0,
+        (mask_left_eye[1] + mask_right_eye[1]) / 2.0,
     )
 
     # Scale factor: match mask's eye distance to the photo's detected eye distance
@@ -987,3 +1075,14 @@ def tech_visor_bw(image_bytes: bytes) -> bytes:
     composited = mask_bgr * mask_alpha + bw_full * (1 - mask_alpha)
 
     return _encode(np.clip(composited, 0, 255).astype(np.uint8))
+
+
+def apply_mask_by_id(image_bytes: bytes, mask_id: str) -> bytes:
+    """Convenience wrapper: looks up a mask by its MASKS registry id."""
+    meta = MASKS[mask_id]
+    return apply_face_mask(image_bytes, meta["file"], meta["left_eye"], meta["right_eye"])
+
+
+def tech_visor_bw(image_bytes: bytes) -> bytes:
+    """Kept for backward compatibility -- original tech-visor style."""
+    return apply_mask_by_id(image_bytes, "tech_visor")
