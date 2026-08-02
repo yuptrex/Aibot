@@ -361,6 +361,16 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         if mask_id not in cv_filters.MASKS:
             await context.bot.send_message(chat_id=chat_id, text="Unknown mask — please try again.")
             return
+
+        existing_file_id = context.user_data.get("original_photo_file_id")
+        if existing_file_id:
+            # A photo is already on hand (the one that opened this menu) —
+            # fit the mask to it right away instead of asking again.
+            context.user_data.pop("awaiting_mask_photo", None)
+            await _run_mask(chat_id, context, query.from_user, existing_file_id, mask_id)
+            return
+
+        # No photo yet — remember the choice and prompt for one.
         context.user_data["awaiting_mask_photo"] = mask_id
         await context.bot.send_message(
             chat_id=chat_id,
