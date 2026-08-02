@@ -37,7 +37,7 @@ STYLES = {
     "blur_bw":       ("🌫️⚫ Aesthetic Blur B/W", lambda b, pct=50: cv_filters.aesthetic_blur(b, intensity=pct, grayscale=True)),
     "glow":          ("🌅 Aesthetic Glow",  lambda b, pct=100: cv_filters.aesthetic_glow(b, intensity=pct)),
     "retro90s":      ("📼 90s Style",       lambda b, pct=100: cv_filters.retro_90s(b, intensity=pct)),
-    "heromask":      ("🤖 Tech Visor B/W",  lambda b, pct=None: cv_filters.tech_visor_bw(b)),
+    "heromask":      ("👁️ Cyber Visor B/W", lambda b, pct=None: cv_filters.tech_visor_bw(b)),
 
 
     # ---- Page 2: "More styles" ----
@@ -78,12 +78,30 @@ PAGE_2_KEYS = [
     "pixelart", "chalk", "holo", "crt", "frost", "solarize", "copper", "galaxy",
 ]
 
-# Ordered list of mask ids shown in the "Masks" browser (matches the
-# cv_filters.MASKS registry keys).
-MASK_KEYS = [
-    "tech_visor", "solar_guardian", "ocean_star", "berry_blossom",
-    "cosmic_comet", "jungle_fox", "storm_falcon", "candy_comet",
-    "dragon_ember", "mint_cloud", "royal_phoenix",
+# Ordered list of mask ids shown in each "Masks" sub-browser (matches the
+# cv_filters.MASKS registry keys). Split into the two categories the user
+# can pick between: narrow "eye" masks (domino-style) and full "face" masks.
+EYE_MASK_KEYS = [
+    "cyber_visor", "kitsune_spirit", "void_wraith",
+    "glacier_shard", "toxic_viper", "lunar_eclipse",
+    "coral_bloom", "amber_talon", "wildwood",
+    "crimson_fang", "iron_spike", "boneyard",
+    "steel_falcon", "golden_hawk", "brass_goggles",
+    "ember_wing", "storm_volt", "camo_ranger",
+    "blood_kitsune", "frostbolt", "circuit_white",
+    "raven_feather", "scarlet_blade", "weathered_hide",
+]
+
+FACE_MASK_KEYS = [
+    "onyx_trooper", "crimson_kitsune", "shadow_cowl",
+    "frost_sentinel", "inferno_devil", "gilded_warden",
+    "toxic_reaper", "amethyst_ghoul", "cracked_marble",
+    "midnight_crescent", "scarlet_bolt", "grim_skull",
+    "magma_reaper", "verdant_guardian", "diamond_jester",
+    "fractured_onyx", "cyber_wraith", "ice_crown",
+    "oni_blaze", "neon_phantom", "raven_beak",
+    "violet_circuit", "golden_sigil", "fractured_soul",
+    "steampunk_gasmask",
 ]
 
 
@@ -111,13 +129,25 @@ def build_style_menu(page: int = 1) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def build_mask_list_menu() -> InlineKeyboardMarkup:
-    """One button per mask (opens its preview), plus a Back button."""
+def build_mask_category_menu() -> InlineKeyboardMarkup:
+    """Top of the mask browser: choose between Eye masks and Face masks."""
+    rows = [
+        [InlineKeyboardButton(f"👁️ Eye Masks ({len(EYE_MASK_KEYS)})", callback_data="maskcat:eye")],
+        [InlineKeyboardButton(f"🎭 Face Masks ({len(FACE_MASK_KEYS)})", callback_data="maskcat:face")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="nav:back")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def build_mask_list_menu(category: str) -> InlineKeyboardMarkup:
+    """One button per mask in the given category (opens its preview),
+    plus a Back button that returns to the category picker."""
+    keys = EYE_MASK_KEYS if category == "eye" else FACE_MASK_KEYS
     rows = []
-    for key in MASK_KEYS:
+    for key in keys:
         label = cv_filters.MASKS[key]["label"]
         rows.append([InlineKeyboardButton(label, callback_data=f"maskprev:{key}")])
-    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="nav:back")])
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="nav:masks")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -275,8 +305,21 @@ async def handle_style_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
     if query.data == "nav:masks":
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"🎭 Pick a mask to preview:\n\n{CREDIT_LINE}",
-            reply_markup=build_mask_list_menu(),
+            text=f"🎭 Pick a mask type:\n\n{CREDIT_LINE}",
+            reply_markup=build_mask_category_menu(),
+        )
+        return
+
+    if query.data.startswith("maskcat:"):
+        _, category = query.data.split(":", 1)
+        if category not in ("eye", "face"):
+            await context.bot.send_message(chat_id=chat_id, text="Unknown mask category — please try again.")
+            return
+        label = "Eye" if category == "eye" else "Face"
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"👁️ Pick a {label} mask to preview:\n\n{CREDIT_LINE}",
+            reply_markup=build_mask_list_menu(category),
         )
         return
 
