@@ -24,83 +24,84 @@ _MASK_RIGHT_EYE = (620, 250)
 # ---------------------------------------------------------------------------
 MASKS = {
     "tech_visor": {
-        "label": "🤖 Tech Visor",
+        "label": "\U0001F916 Tech Visor",
         "file": os.path.join(_ASSETS_DIR, "tech_visor_mask.png"),
         "preview": os.path.join(_ASSETS_DIR, "tech_visor_mask_preview.jpg"),
         "left_eye": (280, 250),
         "right_eye": (620, 250),
     },
-    "crimson_ranger": {
-        "label": "🔴 Crimson Ranger",
-        "file": os.path.join(_ASSETS_DIR, "mask_crimson_ranger.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_crimson_ranger_preview.jpg"),
-        "left_eye": (280, 290),
-        "right_eye": (620, 290),
+    "solar_guardian": {
+        "label": "\U0001F31E Solar Guardian",
+        "file": os.path.join(_ASSETS_DIR, "solar_guardian.png"),
+        "preview": os.path.join(_ASSETS_DIR, "solar_guardian_preview.jpg"),
+        "left_eye": (310, 255),
+        "right_eye": (590, 255),
     },
-    "violet_oracle": {
-        "label": "🟣 Violet Oracle",
-        "file": os.path.join(_ASSETS_DIR, "mask_violet_oracle.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_violet_oracle_preview.jpg"),
-        "left_eye": (280, 295),
-        "right_eye": (620, 295),
+    "ocean_star": {
+        "label": "\U0001F30A Ocean Star",
+        "file": os.path.join(_ASSETS_DIR, "ocean_star.png"),
+        "preview": os.path.join(_ASSETS_DIR, "ocean_star_preview.jpg"),
+        "left_eye": (315, 295),
+        "right_eye": (585, 295),
     },
-    "amber_sentinel": {
-        "label": "🟠 Amber Sentinel",
-        "file": os.path.join(_ASSETS_DIR, "mask_amber_sentinel.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_amber_sentinel_preview.jpg"),
-        "left_eye": (280, 290),
-        "right_eye": (620, 290),
+    "berry_blossom": {
+        "label": "\U0001F338 Berry Blossom",
+        "file": os.path.join(_ASSETS_DIR, "berry_blossom.png"),
+        "preview": os.path.join(_ASSETS_DIR, "berry_blossom_preview.jpg"),
+        "left_eye": (315, 295),
+        "right_eye": (585, 295),
     },
-    "emerald_phantom": {
-        "label": "🟢 Emerald Phantom",
-        "file": os.path.join(_ASSETS_DIR, "mask_emerald_phantom.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_emerald_phantom_preview.jpg"),
-        "left_eye": (280, 315),
-        "right_eye": (620, 315),
+    "cosmic_comet": {
+        "label": "\U0001F4AB Cosmic Comet",
+        "file": os.path.join(_ASSETS_DIR, "cosmic_comet.png"),
+        "preview": os.path.join(_ASSETS_DIR, "cosmic_comet_preview.jpg"),
+        "left_eye": (315, 295),
+        "right_eye": (585, 295),
     },
-    "ice_marshal": {
-        "label": "🔵 Ice Marshal",
-        "file": os.path.join(_ASSETS_DIR, "mask_ice_marshal.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_ice_marshal_preview.jpg"),
-        "left_eye": (280, 280),
-        "right_eye": (620, 280),
+    "jungle_fox": {
+        "label": "\U0001F98A Jungle Fox",
+        "file": os.path.join(_ASSETS_DIR, "jungle_fox.png"),
+        "preview": os.path.join(_ASSETS_DIR, "jungle_fox_preview.jpg"),
+        "left_eye": (315, 305),
+        "right_eye": (585, 305),
     },
-    "magma_warden": {
-        "label": "🟥 Magma Warden",
-        "file": os.path.join(_ASSETS_DIR, "mask_magma_warden.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_magma_warden_preview.jpg"),
-        "left_eye": (280, 300),
-        "right_eye": (620, 300),
+    "storm_falcon": {
+        "label": "\U0001F985 Storm Falcon",
+        "file": os.path.join(_ASSETS_DIR, "storm_falcon.png"),
+        "preview": os.path.join(_ASSETS_DIR, "storm_falcon_preview.jpg"),
+        "left_eye": (305, 260),
+        "right_eye": (595, 260),
     },
-    "slate_wraith": {
-        "label": "⚪ Slate Wraith",
-        "file": os.path.join(_ASSETS_DIR, "mask_slate_wraith.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_slate_wraith_preview.jpg"),
-        "left_eye": (280, 320),
-        "right_eye": (620, 320),
+    "candy_comet": {
+        "label": "\U0001F308 Candy Comet",
+        "file": os.path.join(_ASSETS_DIR, "candy_comet.png"),
+        "preview": os.path.join(_ASSETS_DIR, "candy_comet_preview.jpg"),
+        "left_eye": (325, 305),
+        "right_eye": (575, 305),
     },
-    "gold_paragon": {
-        "label": "🟡 Gold Paragon",
-        "file": os.path.join(_ASSETS_DIR, "mask_gold_paragon.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_gold_paragon_preview.jpg"),
-        "left_eye": (280, 290),
-        "right_eye": (620, 290),
+    "dragon_ember": {
+        "label": "\U0001F409 Dragon Ember",
+        "file": os.path.join(_ASSETS_DIR, "dragon_ember.png"),
+        "preview": os.path.join(_ASSETS_DIR, "dragon_ember_preview.jpg"),
+        "left_eye": (315, 305),
+        "right_eye": (585, 305),
     },
-    "void_seraph": {
-        "label": "🟪 Void Seraph",
-        "file": os.path.join(_ASSETS_DIR, "mask_void_seraph.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_void_seraph_preview.jpg"),
-        "left_eye": (280, 270),
-        "right_eye": (620, 270),
+    "mint_cloud": {
+        "label": "\u2601\uFE0F Mint Cloud",
+        "file": os.path.join(_ASSETS_DIR, "mint_cloud.png"),
+        "preview": os.path.join(_ASSETS_DIR, "mint_cloud_preview.jpg"),
+        "left_eye": (320, 290),
+        "right_eye": (580, 290),
     },
-    "ash_centurion": {
-        "label": "⬛ Ash Centurion",
-        "file": os.path.join(_ASSETS_DIR, "mask_ash_centurion.png"),
-        "preview": os.path.join(_ASSETS_DIR, "mask_ash_centurion_preview.jpg"),
-        "left_eye": (280, 295),
-        "right_eye": (620, 295),
+    "royal_phoenix": {
+        "label": "\U0001F451 Royal Phoenix",
+        "file": os.path.join(_ASSETS_DIR, "royal_phoenix.png"),
+        "preview": os.path.join(_ASSETS_DIR, "royal_phoenix_preview.jpg"),
+        "left_eye": (315, 305),
+        "right_eye": (585, 305),
     },
 }
+
 _MASK_FACE_TOP = 40
 _MASK_FACE_BOTTOM = 660
 _MASK_FACE_LEFT = 40

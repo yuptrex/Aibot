@@ -81,9 +81,9 @@ PAGE_2_KEYS = [
 # Ordered list of mask ids shown in the "Masks" browser (matches the
 # cv_filters.MASKS registry keys).
 MASK_KEYS = [
-    "tech_visor", "crimson_ranger", "violet_oracle", "amber_sentinel",
-    "emerald_phantom", "ice_marshal", "magma_warden", "slate_wraith",
-    "gold_paragon", "void_seraph", "ash_centurion",
+    "tech_visor", "solar_guardian", "ocean_star", "berry_blossom",
+    "cosmic_comet", "jungle_fox", "storm_falcon", "candy_comet",
+    "dragon_ember", "mint_cloud", "royal_phoenix",
 ]
 
 
